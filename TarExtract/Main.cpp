@@ -25,20 +25,16 @@ struct tarHdr {
 
 //actual file struct
 struct contentsFile {
-	//char contents[];
 	char test[700];
 	vector<string> contents;
 	vector<char> v;
-	vector<int> headerLoc;
-	vector<int> totalFileSize;
-	//int s = 5;
-	//char* contents = new char[s];
-	//vector<char> contents[1000];
+	vector<int> headerLoc, totalFileSize, currFileSize, trackFileSize;
 };
 
 //Prototyping functions
 void readHdr(tarHdr &myHdr, ifstream &tarF, contentsFile &file, int currentPos); //function prototype w/ a struct
 void readFile(string fileName, const char * size, contentsFile &file, ifstream &tarF);
+void outputFiles(tarHdr &myHdr, contentsFile &file);
 
 int main() {
 
@@ -47,9 +43,6 @@ int main() {
 	int size, currentPos, fileLength;
 
 	currentPos = 0;
-	//if (fileIN successful)
-
-	//currentPos += 512;
 
 	tarHdr myHdr; //header struct for each file in the .tar
 	contentsFile file; //filecontents struct
@@ -62,13 +55,16 @@ int main() {
 		cout << ".tar opened" << endl;
 	}
 	
-	char test;
-	int si;
-	si = 150;
+	//char test;
+	//int si;
+	//si = 150;
 
+	//get the size of the .tar and then read from the 0th line
 	infile.seekg(0, infile.end);
 	fileLength = infile.tellg();
-	infile.seekg(1024);
+	file.totalFileSize.push_back(fileLength); //pushes size of .tar file into vector
+	infile.seekg(0, infile.beg); //start reading at the beginning of the file so line 0
+	
 	//infile.read((char *)&myHdr, sizeof(myHdr));
 	//infile.get(test);
 
@@ -76,20 +72,27 @@ int main() {
 	readFile(myHdr.name, myHdr.size, file, infile); //take the header info and find the corresponding file in .tar
 
 	//loop though the rest of the file?
-	while (file.headerLoc < file.totalFileSize) {
-		//get length of the files when stream is open
-		infile.seekg(0, infile.end);
-		fileLength = infile.tellg();
-		infile.seekg(0, 512);
+	while (myHdr.name != " " && myHdr.mode != " ") {
+		int temp;
+		
+		//if file <= 512 multiply by 1024 to account for header and data block
+		if (file.currFileSize.back() <= 512) {
+			currentPos = (file.contents.size() * 1024); //only 1 data block long
+		} else {
+			temp = file.headerLoc.back() / 512; //bigger than 512 has not been tested
+			currentPos = temp * 512;
+		}
 
+		infile.seekg(currentPos);
 		readHdr(myHdr, infile, file, currentPos);
-		readFile(myHdr.name, myHdr.size, file, infile);
 
+		//make sure that we have not reached the end of the file
+		if (strtol(myHdr.size,NULL,8) != 0) {
+			readFile(myHdr.name, myHdr.size, file, infile);
+		} else {
+			break;
+		}
 	}
-
-	cout << "test" << endl;
-
-	//File *prgFile = new File(); //each file should be an object no? al;dfj;dskfja
 
 	infile.close(); //close the filereader after it's done
 
@@ -101,51 +104,55 @@ int main() {
 //open .tar file and read in the header
 void readHdr(tarHdr &myHdr, ifstream &tarF, contentsFile &file, int currentPos) {
 
-	//ifstream infile;
 	string fileName;
-	int ownersID, groupID, filesize, modifyTime, checksum, length, headerPos;
+	int ownersID, groupID, filesize, modifyTime, checksum, length, headerPos, currSize;
 	unsigned int computedChecksum;
 	char * block;
 
-	//get length of the files when stream is open
-	//tarF.seekg(0, tarF.end);
-	//length = tarF.tellg();
-	//tarF.seekg(0, tarF.beg);
+	currSize = 0;
 
 	tarF.read((char *)&myHdr, sizeof(myHdr)); //read header into struct
 
-	//all items are stored as c strings and can be converted to C++ strings through assignment.
-	fileName = myHdr.name; //isn't it .name instead of .fileName? (idk I changed it)
-	cout << "Filename: " << fileName << endl;
+	if (strtol(myHdr.size,NULL,8) != 0) { 
+		//all items are stored as c strings and can be converted to C++ strings through assignment.
+		fileName = myHdr.name; 
+		cout << "Filename: " << fileName << endl;
 
-	/*strtol will parse a string and convert the value to an integer. The 8 in the last argument says to assume it is an octal value
-	* stored in the string. */
-	ownersID = strtol(myHdr.uid, NULL, 8);
-	groupID = strtol(myHdr.gid, NULL, 8);
-	cout << "Owner ID = " << ownersID << "\n" << "Group ID = " << groupID << endl;
+		/*strtol will parse a string and convert the value to an integer. The 8 in the last argument says to assume it is an octal value
+		* stored in the string. */
+		ownersID = strtol(myHdr.uid, NULL, 8);
+		groupID = strtol(myHdr.gid, NULL, 8);
+		cout << "Owner ID = " << ownersID << "\n" << "Group ID = " << groupID << endl;
 
-	filesize = strtol(myHdr.size, NULL, 8);
-	cout << "Filesize = " << filesize << endl;
-	file.headerLoc.push_back(filesize); //pushes current file size into vector
-	headerPos = 512 + filesize; 
-	file.headerLoc.push_back(headerPos);
+		filesize = strtol(myHdr.size, NULL, 8);
+		cout << "Filesize = " << filesize << endl;
+		file.currFileSize.push_back(filesize); //pushes size of the current file we are looking at into vector
+		headerPos = 512 + filesize;
+		file.headerLoc.push_back(headerPos); //pushes total header location into vector
 
-	checksum = strtol(myHdr.checksum, NULL, 8);
-	cout << "Checksum = " << checksum << endl;
+		//keeps track of how far we are in the vector
+		for (auto& n : file.headerLoc) {
+			currSize += n;
+		}
+		file.trackFileSize.push_back(currSize); //actually tracking the size accurately
 
-	//size_t skip = filesize % 512 ? filesize + 512 - (filesize % 512) : filesize;
+		checksum = strtol(myHdr.checksum, NULL, 8);
+		cout << "Checksum = " << checksum << endl;
 
-	// Put spaces in the checksum area before we compute it.
-	for (int i = 0; i < 8; i++) {
-		myHdr.checksum[i] = ' ';
-	}
+		// Put spaces in the checksum area before we compute it.
+		for (int i = 0; i < 8; i++) {
+			myHdr.checksum[i] = ' ';
+		}
 
-	computedChecksum = 0;   // initially zero, get each character in the header block and sum them together.
-	block = (char *)&myHdr;
-	for (int i = 0; i < sizeof(myHdr); i++) {
-		computedChecksum += block[i];
-	}
-	cout << "Computed Checksum = " << computedChecksum << endl;
+		computedChecksum = 0;   // initially zero, get each character in the header block and sum them together.
+		block = (char *)&myHdr;
+		for (int i = 0; i < sizeof(myHdr); i++) {
+			computedChecksum += block[i];
+		}
+		cout << "Computed Checksum = " << computedChecksum << endl;
+	} else {
+		cout << "We have read all the files" << endl;
+	}	
 }
 
 //read the first file based on the header
@@ -175,4 +182,13 @@ void readFile(string fileName, const char * size, contentsFile &file, ifstream &
 	file.contents.push_back(s);
 
 	currFile.close();
+}
+
+//
+void outputFiles(tarHdr &myHdr, contentsFile &file) {
+
+
+
+
+
 }
