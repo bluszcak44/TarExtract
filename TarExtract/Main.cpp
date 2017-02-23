@@ -5,7 +5,14 @@
 #include <fstream>
 #include <iostream>
 #include <stdio.h>
+#include <sys/types.h> //linux
 #include "File.h"
+
+#ifdef _WIN32
+#include <direct.h>
+#elif defined __linux__
+#include <sys/stat.h>
+#endif
 
 using namespace std;
 
@@ -32,9 +39,11 @@ struct contentsFile {
 };
 
 //Prototyping functions
-void readHdr(tarHdr &myHdr, ifstream &tarF, contentsFile &file, int currentPos); //function prototype w/ a struct
+void readHdr(tarHdr &myHdr, ifstream &tarF, contentsFile &file); //function prototype w/ a struct
 void readFile(string fileName, const char * size, contentsFile &file, ifstream &tarF);
+void remainingFilesLoop(tarHdr &myHdr, contentsFile &file, ifstream &tarF);
 void outputFiles(tarHdr &myHdr, contentsFile &file);
+void make_directory(string name);
 
 int main() {
 
@@ -54,7 +63,9 @@ int main() {
 		//infile.read((char *)&myHdr, sizeof(myHdr));
 		cout << ".tar opened" << endl;
 	}
-	
+
+	make_directory("example");
+	cout << "test" << endl;
 	//char test;
 	//int si;
 	//si = 150;
@@ -68,41 +79,21 @@ int main() {
 	//infile.read((char *)&myHdr, sizeof(myHdr));
 	//infile.get(test);
 
-	readHdr(myHdr, infile, file, currentPos); //get your header struct
+	readHdr(myHdr, infile, file); //get your header struct
 	readFile(myHdr.name, myHdr.size, file, infile); //take the header info and find the corresponding file in .tar
-
-	//loop though the rest of the file?
-	while (myHdr.name != " " && myHdr.mode != " ") {
-		int temp;
-		
-		//if file <= 512 multiply by 1024 to account for header and data block
-		if (file.currFileSize.back() <= 512) {
-			currentPos = (file.contents.size() * 1024); //only 1 data block long
-		} else {
-			temp = file.headerLoc.back() / 512; //bigger than 512 has not been tested
-			currentPos = temp * 512;
-		}
-
-		infile.seekg(currentPos);
-		readHdr(myHdr, infile, file, currentPos);
-
-		//make sure that we have not reached the end of the file
-		if (strtol(myHdr.size,NULL,8) != 0) {
-			readFile(myHdr.name, myHdr.size, file, infile);
-		} else {
-			break;
-		}
-	}
+	remainingFilesLoop(myHdr, file, infile); //loop through the remaining files
 
 	infile.close(); //close the filereader after it's done
 
+
+	outputFiles(myHdr, file);
 	cout << "We made it to the end of the program. " << "\n" << endl;
 	printf("Press enter to continue...\n");
 	getchar();
 }
 
 //open .tar file and read in the header
-void readHdr(tarHdr &myHdr, ifstream &tarF, contentsFile &file, int currentPos) {
+void readHdr(tarHdr &myHdr, ifstream &tarF, contentsFile &file) {
 
 	string fileName;
 	int ownersID, groupID, filesize, modifyTime, checksum, length, headerPos, currSize;
@@ -114,7 +105,7 @@ void readHdr(tarHdr &myHdr, ifstream &tarF, contentsFile &file, int currentPos) 
 	tarF.read((char *)&myHdr, sizeof(myHdr)); //read header into struct
 
 	if (strtol(myHdr.size,NULL,8) != 0) { 
-		//all items are stored as c strings and can be converted to C++ strings through assignment.
+		
 		fileName = myHdr.name; 
 		cout << "Filename: " << fileName << endl;
 
@@ -176,7 +167,6 @@ void readFile(string fileName, const char * size, contentsFile &file, ifstream &
 	}
 	file.v.resize(fileSize);
 	tarF.read(&file.v[0], fileSize);
-	//tarF.read((char *)&file.test, fileSize);
 	
 	string s = string(file.v.begin(), file.v.end());
 	file.contents.push_back(s);
@@ -185,10 +175,56 @@ void readFile(string fileName, const char * size, contentsFile &file, ifstream &
 }
 
 //
+void remainingFilesLoop(tarHdr &myHdr, contentsFile &file, ifstream &tarFile) {
+	int currentPos;
+
+	currentPos = 0;
+
+	//loop though the rest of the file
+	while (myHdr.name != " " && myHdr.mode != " ") {
+		int temp;
+
+		//if file <= 512 multiply by 1024 to account for header and data block
+		if (file.currFileSize.back() <= 512) {
+			currentPos = (file.contents.size() * 1024); //only 1 data block long
+		} else {
+			temp = file.headerLoc.back() / 512; //bigger than 512 has not been tested
+			currentPos = temp * 512;
+		}
+
+		//read at the correct byte location
+		tarFile.seekg(currentPos);
+		readHdr(myHdr, tarFile, file);
+
+		//make sure that we have not reached the end of the file
+		if (strtol(myHdr.size, NULL, 8) != 0) {
+			readFile(myHdr.name, myHdr.size, file, tarFile);
+		} else {
+			break;
+		}
+	}
+}
+
+//output all of the files that we got from the .tar
 void outputFiles(tarHdr &myHdr, contentsFile &file) {
+	
+	
+ 
 
 
 
 
+}
 
+//Make a directory in both windows and linux --WORKS
+void make_directory(string name) {
+	string mk;
+	string path;
+
+	mk = "mkdir ";
+	path = mk.append(name);
+	const char *c = path.c_str();
+
+	system(c);
+	cout << "test" << endl;
 }
