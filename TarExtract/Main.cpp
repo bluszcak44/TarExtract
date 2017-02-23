@@ -48,7 +48,7 @@ void make_directory(string name);
 int main() {
 
 	ifstream infile, nextFile;
-	string fileN;
+	string fileN, usrTarFile, usrFolderChng;
 	int size, currentPos, fileLength;
 
 	currentPos = 0;
@@ -56,7 +56,9 @@ int main() {
 	tarHdr myHdr; //header struct for each file in the .tar
 	contentsFile file; //filecontents struct
 
-	infile.open("example.tar");
+	cout << "Which .tar file would you like to extract? (i.e. 'example')" << endl;
+	cin >> usrTarFile;
+	infile.open(usrTarFile + ".tar");
 	if (infile.fail()) {
 		cerr << "Couldn't open input file -- exitting" << endl;
 	} else {
@@ -64,8 +66,18 @@ int main() {
 		cout << ".tar opened" << endl;
 	}
 
+	//cout << "Y or N: Would you like to change the name of the extraction folder?" << endl;
+	//cin >> usrFolderChng;
+	//if (usrFolderChng == "Y") {
+	//	cout << "Please enter the name you would like to give the folder " << endl;
+	//	cin >> usrTarFile;
+	//} else if (usrFolderChng == "N") {
+	//	cout << "Using same name as the .tar file: " << usrTarFile;
+	//} else {
+	//	//
+	//}
+
 	make_directory("example");
-	cout << "test" << endl;
 	//char test;
 	//int si;
 	//si = 150;
@@ -81,8 +93,7 @@ int main() {
 
 	readHdr(myHdr, infile, file); //get your header struct
 	readFile(myHdr.name, myHdr.size, file, infile); //take the header info and find the corresponding file in .tar
-	outputFiles(myHdr, file);
-	//Functin call to save first file into created directory, after this the call will only be used in "remainingFilesLoop"
+	outputFiles(myHdr, file); //Functin call to save first file into created directory, after this the call will only be used in "remainingFilesLoop"
 	remainingFilesLoop(myHdr, file, infile); //loop through the remaining files
 
 	infile.close(); //close the filereader after it's done
@@ -90,6 +101,7 @@ int main() {
 	cout << "We made it to the end of the program. " << "\n" << endl;
 	printf("Press enter to continue...\n");
 	getchar();
+	getchar(); //need 2 so it eats the CR and actually pauses
 }
 
 //open .tar file and read in the header
@@ -192,6 +204,12 @@ void remainingFilesLoop(tarHdr &myHdr, contentsFile &file, ifstream &tarFile) {
 			currentPos = temp * 512;
 		}
 
+		//reading
+		//infile.read((char*))&myheader, sizeof(myheader));
+		//int p = strtol(myheader.filesize,null,8) + 511) /512;
+		//infile.seekg(p * 512, std::(ios_base::cur);
+		//infile.read((char*)&myheader, sizeof(myheader));
+
 		//read at the correct byte location
 		tarFile.seekg(currentPos);
 		readHdr(myHdr, tarFile, file);
@@ -206,7 +224,7 @@ void remainingFilesLoop(tarHdr &myHdr, contentsFile &file, ifstream &tarFile) {
 	}
 }
 
-//output all of the files that we got from the .tar into the folder that we created as .txts
+//output all of the files that we got from the .tar into the folder that we created
 void outputFiles(tarHdr &myHdr, contentsFile &file) {
 	ofstream fileOut;
 	int fileCnt;
