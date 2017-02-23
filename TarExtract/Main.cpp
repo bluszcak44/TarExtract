@@ -35,11 +35,11 @@ struct contentsFile {
 	char test[700];
 	vector<string> contents;
 	vector<char> v;
-	vector<int> headerLoc, totalFileSize, currFileSize, trackFileSize;
+	vector<int> headerLoc, totalFileSize, currFileSize, trackFileSize, outputFiles;
 };
 
 //Prototyping functions
-void readHdr(tarHdr &myHdr, ifstream &tarF, contentsFile &file); //function prototype w/ a struct
+void readHdr(tarHdr &myHdr, ifstream &tarF, contentsFile &file);
 void readFile(string fileName, const char * size, contentsFile &file, ifstream &tarF);
 void remainingFilesLoop(tarHdr &myHdr, contentsFile &file, ifstream &tarF);
 void outputFiles(tarHdr &myHdr, contentsFile &file);
@@ -81,12 +81,12 @@ int main() {
 
 	readHdr(myHdr, infile, file); //get your header struct
 	readFile(myHdr.name, myHdr.size, file, infile); //take the header info and find the corresponding file in .tar
+	outputFiles(myHdr, file);
+	//Functin call to save first file into created directory, after this the call will only be used in "remainingFilesLoop"
 	remainingFilesLoop(myHdr, file, infile); //loop through the remaining files
 
 	infile.close(); //close the filereader after it's done
 
-
-	outputFiles(myHdr, file);
 	cout << "We made it to the end of the program. " << "\n" << endl;
 	printf("Press enter to continue...\n");
 	getchar();
@@ -174,7 +174,7 @@ void readFile(string fileName, const char * size, contentsFile &file, ifstream &
 	currFile.close();
 }
 
-//
+//Loops through the remainingfiles after the first initial one
 void remainingFilesLoop(tarHdr &myHdr, contentsFile &file, ifstream &tarFile) {
 	int currentPos;
 
@@ -199,22 +199,29 @@ void remainingFilesLoop(tarHdr &myHdr, contentsFile &file, ifstream &tarFile) {
 		//make sure that we have not reached the end of the file
 		if (strtol(myHdr.size, NULL, 8) != 0) {
 			readFile(myHdr.name, myHdr.size, file, tarFile);
+			outputFiles(myHdr, file);
 		} else {
 			break;
 		}
 	}
 }
 
-//output all of the files that we got from the .tar
+//output all of the files that we got from the .tar into the folder that we created as .txts
 void outputFiles(tarHdr &myHdr, contentsFile &file) {
-	
-	
- 
+	ofstream fileOut;
+	int fileCnt;
+	fileCnt = 0;
+	fileOut.open(("example/" + (string)myHdr.name).c_str());
 
-
-
-
-}
+	if (fileOut.is_open()) {
+		cout << endl << "Beginning to write to the file" << endl;
+		file.outputFiles.push_back(1); //need global variable to count files 
+		fileCnt = file.outputFiles.size();
+		fileOut << file.contents.at(fileCnt -1);
+	} else {
+		cout << "File could not be opened." << endl << endl;
+	}
+} 
 
 //Make a directory in both windows and linux --WORKS
 void make_directory(string name) {
