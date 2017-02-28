@@ -41,8 +41,8 @@ struct contentsFile {
 
 //Prototyping functions
 void readHdr(tarHdr &myHdr, ifstream &tarF, contentsFile &file);
-void readFile(string fileName, const char * size, contentsFile &file, ifstream &tarF);
-void remainingFilesLoop(tarHdr &myHdr, contentsFile &file, ifstream &tarF);
+void readFile(contentsFile &file, ifstream &tarF);
+//void remainingFilesLoop(tarHdr &myHdr, contentsFile &file, ifstream &tarF);
 void outputFiles(tarHdr &myHdr, contentsFile &file);
 void make_directory(string name);
 
@@ -77,7 +77,7 @@ int main() {
 	//	//
 	//}
 
-	make_directory("testFile");
+	make_directory("srcTest");
 
 	//get the size of the .tar and then read from the 0th line
 	infile.seekg(0, infile.end);
@@ -86,7 +86,7 @@ int main() {
 	infile.seekg(0, infile.beg); //start reading at the beginning of the file so line 0
 
 	readHdr(myHdr, infile, file); //get your header struct
-//readFile(myHdr.name, myHdr.size, file, infile); //take the header info and find the corresponding file in .tar
+	readFile(file, infile); //take the header info and find the corresponding file in .tar
 //	outputFiles(myHdr, file); //Functin call to save first file into created directory, after this the call will only be used in "remainingFilesLoop"
 //	remainingFilesLoop(myHdr, file, infile); //loop through the remaining files
 
@@ -223,6 +223,7 @@ void readHdr(tarHdr &myHdr, ifstream &tarF, contentsFile &file) {
 			cout << "No more headers" << endl;
 			file.hdrPrev.pop_back(); //one extra to get rid of now prev = pos = #headers
 			file.hdrPos.pop_back();
+			file.dataBlocks.pop_back();
 			headers = false; //break me out of the almighy for loop that starts this shindig
 		}	
 	}
@@ -239,72 +240,53 @@ void readHdr(tarHdr &myHdr, ifstream &tarF, contentsFile &file) {
 }
 
 //read the first file based on the header
-void readFile(string fileName, const char * size, contentsFile &file, ifstream &tarF) {
+void readFile(contentsFile &file, ifstream &tarF) {
 
-	int fileSize;
+	int fileSize, pos;
 	ifstream currFile;
-	string fileN;
+	string fileName, s;
 	const char *f;
+	char slash;
 
-	//converting it to a C string
-	fileN = fileName;
-	f = fileN.c_str();
 
-	fileSize = strtol(size, NULL, 8); //converting octal to base 10 int
+	for (int i = 0; i < file.tarHeaders.size(); i++) {
+		fileName = file.tarHeaders[i];
+		//f = fileN.c_str();
+		slash = fileName.back();
+		fileSize = file.tarFileSizes[i];
 
-	currFile.open(f);
-	//infile.read((char*)&file.test, sizeof(int)*size);
-	if (tarF.fail()) {
-		cerr << "Couldn't open input file -- exitting" << endl;
+		currFile.open("open/" + (string)fileName);
+		if (tarF.fail()) { //curFile or tarF?
+			cerr << "Couldn't open input file -- exiting" << endl;
+		}  //need an else or nah?
+
+		//if we have folder, do nothing -- if we have file seek and read
+		if (file.tarFileLink[i] == 5 || slash == '/') {
+			cout << "Folder: " << fileName << endl;
+		} else { 
+			//
+			if (file.hdrPos[i] == 0) {
+				pos = file.hdrPos[i] + (file.dataBlocks[i] * 512);
+				//pos = file.hdrPos[i] + 512; //start reading
+				tarF.seekg(pos);
+				file.v.resize(file.tarFileSizes[i]);
+				tarF.read(&file.v[0], file.tarFileSizes[i]);
+			} else {
+				//pos = file.hdrPos[i] + (file.dataBlocks[i]) * 512;
+				pos = file.hdrPos[i] + 512; //strt read
+				tarF.seekg(pos);
+				file.v.resize(file.tarFileSizes[i]);
+				tarF.read(&file.v[0], file.tarFileSizes[i]);
+			}
+		}
+
+		s = string(file.v.begin(), file.v.end()); //read contents of v we just got into a string
+		file.tarFileContents.push_back(s); //push into vector
+		file.v.clear();
 	}
-	file.v.resize(fileSize);
-	tarF.read(&file.v[0], fileSize);
-
-	string s = string(file.v.begin(), file.v.end());
-	file.contents.push_back(s);
-
 	currFile.close();
 }
 
-//Loops through the remainingfiles after the first initial one
-void remainingFilesLoop(tarHdr &myHdr, contentsFile &file, ifstream &tarFile) {
-	int currentPos;
-
-	currentPos = 0;
-
-	//loop though the rest of the file
-	while (myHdr.name != " " && myHdr.mode != " ") {
-		int temp;
-
-		//if file <= 512 multiply by 1024 to account for header and data block
-		if (file.currFileSize.back() <= 512) {
-			currentPos = (file.contents.size() * 1024); //only 1 data block long
-		}
-		else {
-			temp = file.headerLoc.back() / 512; //bigger than 512 has not been tested
-			currentPos = temp * 512;
-		}
-
-		//reading
-		//infile.read((char*))&myheader, sizeof(myheader));
-		//int p = strtol(myheader.filesize,null,8) + 511) /512;
-		//infile.seekg(p * 512, std::(ios_base::cur);
-		//infile.read((char*)&myheader, sizeof(myheader));
-
-		//read at the correct byte location
-		tarFile.seekg(currentPos);
-		readHdr(myHdr, tarFile, file);
-
-		//make sure that we have not reached the end of the file
-		if (strtol(myHdr.size, NULL, 8) != 0) {
-			readFile(myHdr.name, myHdr.size, file, tarFile);
-			outputFiles(myHdr, file);
-		}
-		else {
-			break;
-		}
-	}
-}
 
 //output all of the files that we got from the .tar into the folder that we created
 void outputFiles(tarHdr &myHdr, contentsFile &file) {
