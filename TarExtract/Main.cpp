@@ -1,21 +1,17 @@
 //Written by: Blaine Luszcak
-#include <string>
+#include <cstring>
 #include <cstdlib>
-#include <stdio.h>
 #include <cstring>
 #include <fstream>
 #include <iostream>
 #include <stdio.h>
-#include <sys/types.h> 
+#include <sys/types.h> //linux
 #include "File.h"
 
 #ifdef _WIN32
 #include <direct.h>
-#define GetCurrentDir getcwd
 #elif defined __linux__
-#include <unistd.h>
 #include <sys/stat.h>
-#define GetCurrentDir _getcwd
 #endif
 
 using namespace std;
@@ -36,24 +32,25 @@ struct tarHdr {
 
 //actual file struct
 struct contentsFile {
+	char test[700];
 	vector<string> contents, tarHeaders, tarFileContents;
 	vector<char> v;
-	vector<int> headerLoc, totalFileSize, currFileSize, trackFileSize,
-		outputFiles, tarFileSizes, tarFileLink, headerPos, dataSize, dataBlockCnt, hdrNxt, hdrPrev;
+	vector<int> headerLoc, totalFileSize, currFileSize, trackFileSize, outputFiles,
+				hdrPrev, hdrPos, dataBlocks, tarFileSizes, tarFileLink;
 };
 
 //Prototyping functions
 void readHdr(tarHdr &myHdr, ifstream &tarF, contentsFile &file);
-void readFile(string fileName, contentsFile &file, ifstream &tarF);
-//void remainingFilesLoop(tarHdr &myHdr, contentsFile &file, ifstream &tarF);
+void readFile(string fileName, const char * size, contentsFile &file, ifstream &tarF);
+void remainingFilesLoop(tarHdr &myHdr, contentsFile &file, ifstream &tarF);
 void outputFiles(tarHdr &myHdr, contentsFile &file);
 void make_directory(string name);
-//char curPth();
+
 int main() {
 
 	ifstream infile, nextFile;
 	string fileN, usrTarFile, usrFolderChng;
-	int currentPos;
+	int size, currentPos, fileLength;
 
 	currentPos = 0;
 
@@ -65,12 +62,10 @@ int main() {
 	infile.open(usrTarFile + ".tar");
 	if (infile.fail()) {
 		cerr << "Couldn't open input file -- exitting" << endl;
-	}
-	else {
+	} else {
 		cout << ".tar opened" << endl;
 	}
 
-	//-----------------------
 	//cout << "Y or N: Would you like to change the name of the extraction folder?" << endl;
 	//cin >> usrFolderChng;
 	//if (usrFolderChng == "Y") {
@@ -82,17 +77,18 @@ int main() {
 	//	//
 	//}
 
-	//curPth(); not 100% convinced that I need this
+	make_directory("testFile");
 
-	make_directory("open");
-	//make_directory("testFolder");
-	//make_directory("srcTest");
-
-	//--------------------
+	//get the size of the .tar and then read from the 0th line
+	infile.seekg(0, infile.end);
+	fileLength = infile.tellg();
+	file.totalFileSize.push_back(fileLength); //pushes size of .tar file into vector
+	infile.seekg(0, infile.beg); //start reading at the beginning of the file so line 0
 
 	readHdr(myHdr, infile, file); //get your header struct
-	readFile(myHdr.name, file, infile); //take the header info and find the corresponding file in .tar
-	outputFiles(myHdr, file); //Functin call to save first file into created directory, after this the call will only be used in "remainingFilesLoop"
+//readFile(myHdr.name, myHdr.size, file, infile); //take the header info and find the corresponding file in .tar
+//	outputFiles(myHdr, file); //Functin call to save first file into created directory, after this the call will only be used in "remainingFilesLoop"
+//	remainingFilesLoop(myHdr, file, infile); //loop through the remaining files
 
 	infile.close(); //close the filereader after it's done
 
@@ -105,236 +101,243 @@ int main() {
 //open .tar file and read in the header
 void readHdr(tarHdr &myHdr, ifstream &tarF, contentsFile &file) {
 
-	string fileName, folder;
-	int ownersID, groupID, filesize, modifyTime, checksum, headerPos, currSize,
-		hdrCnt, hdrStrt, prev;
-	unsigned int computedChecksum;
+	string fileName, folder, hdrLnkflag;
+	int ownersID, groupID, modifyTime, checksum, length, hdrCheckSum, headerPos, currSize,
+		hdrCnt, hdrStrt, hdrPrev, fileSize, p, pntLoc;
+	unsigned int hdrComputedChecksum;
 	char * block;
-	char folderC;
-	streampos pos;
+	char folderC, slash;
+	bool headers, firstHeader;
+	//streampos pos;
 
+	headers = true;
+	firstHeader = true;
 	currSize = 0;
 	hdrCnt = 0;
 	hdrStrt = 0;
-	prev = 0;
+	hdrPrev = 0;
 
-	file.hdrPrev.push_back(0);
-	//file.headerPos.push_back(0);
-		while (myHdr.linkflag != "" && (string)myHdr.name != "") {
-		//reading the headerst
+	file.hdrPrev.push_back(0); //start headerPrevious at 0
+//	file.hdrPos.push_back(0); //starting real header vec @ 0 b/c it's always starting @ 0
+	while (headers == true) { //can't start "" so need bool
+
+		//Loop to read header and find the next one || starts @ 0 but doesn't auto push it
 		tarF.read((char*)&myHdr, sizeof(myHdr));
-		int temp = strtol(myHdr.size, NULL, 8);
-		int p = ((temp + 511) / 512); //how many data block there are, I need this number for the data files
-		file.dataBlockCnt.push_back(p); //push # of data blocks in
-		tarF.seekg(p * 512, (std::ios_base::cur));
+		fileSize = strtol(myHdr.size, NULL, 8);
+		p = ((fileSize + 511) / 512); //algo for skip
+		file.dataBlocks.push_back(p); //push # of 512 data blocks before next header
+		tarF.seekg(p * 512, (std::ios_base::cur)); //Goes to the NEXT header
 
-		prev = tarF.tellg();
-		file.hdrPrev.push_back(prev);
-
-		if ((string)myHdr.name != "" && (string)myHdr.name != "") {
-
-			fileName = myHdr.name;
+		fileName = myHdr.name;
+		hdrLnkflag = myHdr.linkflag;
+		if (fileName != "") { //apparently you can't do two && !='s
+			hdrPrev = tarF.tellg();
+			file.hdrPrev.push_back(hdrPrev); //keep track of all header positions
+			
+			slash = fileName.back(); //get slash in fileName if present
 			cout << "Filename: " << fileName << endl;
-			folderC = fileName.back(); //trying to find slash
 
-			/*strtol will parse a string and convert the value to an integer. The 8 in the last argument says to assume it is an octal value
-			* stored in the string. */
+			/*strtol will parse a string and convert the value to an integer. The 8 in the last argument says to assume it is an octal value * stored in the string. */
 			ownersID = strtol(myHdr.uid, NULL, 8);
 			groupID = strtol(myHdr.gid, NULL, 8);
 			cout << "Owner ID = " << ownersID << "\n" << "Group ID = " << groupID << endl;
 
-			filesize = strtol(myHdr.size, NULL, 8);
-			cout << "Filesize = " << filesize << endl;
-			file.currFileSize.push_back(filesize); //pushes size of the current file we are looking at into vector
-			headerPos = 512 + filesize;
-			file.headerLoc.push_back(headerPos); //pushes total header location into vector
+			cout << "Fileize = " << fileSize << endl;
 
-												 //keeps track of how far we are in the vector
-			for (auto& n : file.headerLoc) {
-				currSize += n;
-			}
-			file.trackFileSize.push_back(currSize); //actually tracking the size accurately
+			hdrCheckSum = strtol(myHdr.checksum, NULL, 8);
+			cout << "Checksum = " << hdrCheckSum << endl;
 
-			checksum = strtol(myHdr.checksum, NULL, 8);
-			cout << "Checksum = " << checksum << endl;
-
-			// Put spaces in the checksum area before we compute it.
+			//Put spaces in the checksum are before we compute
 			for (int i = 0; i < 8; i++) {
 				myHdr.checksum[i] = ' ';
 			}
-
-			computedChecksum = 0;   // initially zero, get each character in the header block and sum them together.
-			block = (char *)&myHdr;
+			block = (char*)&myHdr;
+			hdrComputedChecksum = 0;
 			for (int i = 0; i < sizeof(myHdr); i++) {
-				computedChecksum += block[i];
+				hdrComputedChecksum += block[i];
 			}
-			cout << "Computed Checksum = " << computedChecksum << endl;
+			cout << "Computed Checksum " << hdrComputedChecksum << endl;
 
+			//---------------------basic header information read---------------------------//
 
-			if ((string)myHdr.linkflag == "5" || folderC == '/') {
+			//sorting out dataPositions based on files and folders
+			if (hdrLnkflag == "5" || slash == '/') { //if either of these statements true
 
-				//put 0 as the first header because it has to start there
-				if (hdrCnt == 0) {
-					temp = tarF.tellg();
-					file.headerPos.push_back(0);
-					file.headerPos.push_back(temp);
+				//if first thing is a FOLDER push 0 into first element of vector
+				if (firstHeader == true) {
+					pntLoc = tarF.tellg();
+					file.hdrPos.push_back(0);
+					file.hdrPos.push_back(pntLoc);
+					firstHeader = false;
 					hdrCnt += 2;
-				} else if (hdrCnt == 1)  {
+				} else if (hdrCnt == 1) {
+					//int t = *(file.hdrPos.rbegin());
 					int t = *(file.hdrPrev.rbegin() + 1);
-					//int temp = *(file.headerPos.rbegin());
-					file.headerPos.push_back(t); //folder headers just move 512
+					file.hdrPos.push_back(t);
 					hdrCnt++;
 				} else {
 					int t = *(file.hdrPrev.rbegin());
-					//int temp = *(file.headerPos.rbegin());
-					file.headerPos.push_back(t); //folder headers just move 512
+					//int t = *(file.hdrPos.rbegin());
+					file.hdrPos.push_back(t); //folder headers just move 512
 					hdrCnt++;
 				}
+			}
+			//actual file
+			else if (hdrLnkflag == "\0" || hdrLnkflag == "0") {
 
-			} else if ((string)myHdr.linkflag == "\0" || (string)myHdr.linkflag == "0") {
-				
-				//header pos has to start at 0
-				if (hdrCnt == 0) {
-					temp = tarF.tellg(); //next header position
-					file.headerPos.push_back(0); //first header always starts at 0
-					hdrCnt++;
-				} else if (hdrCnt == 1) {
-					//temp = tarF.tellg(); //next header position
-					int previous = *(file.hdrPrev.rbegin() + 1);
-					file.headerPos.push_back(previous);
-					//file.headerPos.push_back(temp);
-					hdrCnt++;
-				} else { 
-
-					if (file.hdrPrev.size() == file.headerPos.size()) {
-						if (p == 1) {
-							//temp = tarF.tellg(); //next header position
-							int previous = *(file.hdrPrev.rbegin());
-							//int previous = *(file.hdrPrev.rbegin() + 1);
-							file.headerPos.push_back(previous);
-							hdrCnt++;
-						} else { //bigger files case not tested
-							int previous = *(file.hdrPrev.rbegin());
-							//temp = tarF.tellg();
-							file.headerPos.push_back(previous);
-							hdrCnt++;
-						}
-					} if (p == 1) {
+				//if first thing is a FILE ---- header pos has to start at 0
+				if (firstHeader == true) {
+					pntLoc = tarF.tellg();
+					file.hdrPos.push_back(0);
+					file.hdrPos.push_back(pntLoc); //--originally commented out //shouldn't we push both in like the top?
+					firstHeader = false;
+					hdrCnt += 2;
+				} else {
+					if (p == 1) {
 						//if the one before and the current are equivalent don't push in the same thing
-						if (*(file.hdrPrev.rbegin() + 1) == file.headerPos.back()) {
-							int previous = *(file.hdrPrev.rbegin());
-							file.headerPos.push_back(previous);
+						if (*(file.hdrPrev.rbegin() + 1) == file.hdrPos.back()) {
+							pntLoc = *(file.hdrPrev.rbegin());
+							file.hdrPos.push_back(pntLoc);
 							hdrCnt++;
-						} else {
-							//temp = tarF.tellg(); //next header position
-							int previous = *(file.hdrPrev.rbegin() + 1); //-------------------------------------------------------------Changed this to +1 if it stop working
-						    //int previous = *(file.hdrPrev.rbegin() + 1);
-							file.headerPos.push_back(previous);
+						} else { //not sure we ever hit this case
+							pntLoc = *(file.hdrPrev.rbegin() + 1);
+							file.hdrPos.push_back(pntLoc);
 							hdrCnt++;
 						}
-					} else { //bigger files case not tested
-						int previous = *(file.hdrPrev.rbegin());
-						//temp = tarF.tellg();
-						file.headerPos.push_back(previous);
+					}
+					//bigger files > 512
+					else {
+						pntLoc = *(file.hdrPrev.rbegin()); //previous
+						file.hdrPos.push_back(pntLoc);
 						hdrCnt++;
 					}
 				}
 			} else {
-				cout << "We broke down! " << endl;
+				cout << "Something went wrong. " << endl;
 			}
 
-			file.tarHeaders.push_back(myHdr.name);
-			file.tarFileSizes.push_back(strtol(myHdr.size, NULL, 8));
+			file.tarHeaders.push_back(fileName);
+			file.tarFileSizes.push_back(fileSize);
 			file.tarFileLink.push_back(strtol(myHdr.linkflag, NULL, 8));
 		} else {
-			cout << "We have read all the files" << endl;
-			break;
-		}
+			cout << "No more headers" << endl;
+			file.hdrPrev.pop_back(); //one extra to get rid of now prev = pos = #headers
+			file.hdrPos.pop_back();
+			headers = false; //break me out of the almighy for loop that starts this shindig
+		}	
+	}
+	cout << "We have read all of the files " << endl;
+	cout << "-------------------" << endl;
+
+	for (int i = 0; i < file.hdrPos.size(); i++) {
+		cout << "Header: " << file.tarHeaders[i] << endl;
+		cout << "File size " << file.tarFileSizes[i] << endl;
+		cout << "Starting position: " << file.hdrPos[i] << endl;
+		cout << "LinkFlag: " <<  file.tarFileLink[i] << endl;
+		cout << "-------------------" << endl;
 	}
 }
 
 //read the first file based on the header
-void readFile(string fileName, contentsFile &file, ifstream &tarF) {
+void readFile(string fileName, const char * size, contentsFile &file, ifstream &tarF) {
 
-	int fileSize, pos;
+	int fileSize;
 	ifstream currFile;
-	string fileN, s;
-	//const char *f;
-	char folderC;
+	string fileN;
+	const char *f;
 
+	//converting it to a C string
+	fileN = fileName;
+	f = fileN.c_str();
 
-	file.dataBlockCnt.pop_back();
-	for (int i = 0; i < file.tarHeaders.size(); i++) {
-		fileN = file.tarHeaders[i];
-		//f = fileN.c_str();
-		folderC = fileN.back();
-		fileSize = file.tarFileSizes[i];
+	fileSize = strtol(size, NULL, 8); //converting octal to base 10 int
 
-		currFile.open(("open/" + (string)fileN.c_str()));
-		if (tarF.fail()) {
-			cerr << "Couldn't open input file -- exitting" << endl;
-		}
+	currFile.open(f);
+	//infile.read((char*)&file.test, sizeof(int)*size);
+	if (tarF.fail()) {
+		cerr << "Couldn't open input file -- exitting" << endl;
+	}
+	file.v.resize(fileSize);
+	tarF.read(&file.v[0], fileSize);
 
+	string s = string(file.v.begin(), file.v.end());
+	file.contents.push_back(s);
 
-		if (file.tarFileLink[i] != 5 && folderC != '/') { //means its a file
-			if (file.headerPos[i] == 0) {
-				pos = file.headerPos[i] + (file.dataBlockCnt[i] * 512);
-				//pos = file.headerPos[i] + 512; //start reading
-				tarF.seekg(pos);
-				file.v.resize(file.tarFileSizes[i]);
-				tarF.read(&file.v[0], file.tarFileSizes[i]);
-			} else {
-				//pos = file.headerPos[i] + (file.dataBlockCnt[i] * 512);
-				pos = file.headerPos[i] + 512; //start reading
-				tarF.seekg(pos);
-				file.v.resize(file.tarFileSizes[i]);
-				tarF.read(&file.v[0], file.tarFileSizes[i]);
-			}
+	currFile.close();
+}
+
+//Loops through the remainingfiles after the first initial one
+void remainingFilesLoop(tarHdr &myHdr, contentsFile &file, ifstream &tarFile) {
+	int currentPos;
+
+	currentPos = 0;
+
+	//loop though the rest of the file
+	while (myHdr.name != " " && myHdr.mode != " ") {
+		int temp;
+
+		//if file <= 512 multiply by 1024 to account for header and data block
+		if (file.currFileSize.back() <= 512) {
+			currentPos = (file.contents.size() * 1024); //only 1 data block long
 		}
 		else {
-			cout << "Folder: " << fileN << endl;
+			temp = file.headerLoc.back() / 512; //bigger than 512 has not been tested
+			currentPos = temp * 512;
 		}
 
-		string s = string(file.v.begin(), file.v.end());
-		file.tarFileContents.push_back(s);
-		file.v.clear();
-		//currFile.close();
+		//reading
+		//infile.read((char*))&myheader, sizeof(myheader));
+		//int p = strtol(myheader.filesize,null,8) + 511) /512;
+		//infile.seekg(p * 512, std::(ios_base::cur);
+		//infile.read((char*)&myheader, sizeof(myheader));
+
+		//read at the correct byte location
+		tarFile.seekg(currentPos);
+		readHdr(myHdr, tarFile, file);
+
+		//make sure that we have not reached the end of the file
+		if (strtol(myHdr.size, NULL, 8) != 0) {
+			readFile(myHdr.name, myHdr.size, file, tarFile);
+			outputFiles(myHdr, file);
+		}
+		else {
+			break;
+		}
 	}
-	currFile.close();
 }
 
 //output all of the files that we got from the .tar into the folder that we created
 void outputFiles(tarHdr &myHdr, contentsFile &file) {
 	ofstream fileOut;
 	int fileCnt;
-	string test;
+	string directoryStart, hdrTitle, dirNoSlash;
+	char slash;
 	fileCnt = 0;
 
-	test = "open/";
-	for (int i = 0; i < file.tarHeaders.size(); i++) {
-		fileOut.open(("open/" + (string)file.tarHeaders[i]).c_str());
-		//fileOut.open(("srcTest/" + (string)file.tarHeaders[i]).c_str());
+	directoryStart = "open/";
 
-		if ((char)file.tarHeaders[i].back() == '/') {
-			string temp = file.tarHeaders[i].c_str();
-			string temptemp = temp.erase(temp.size() - 1);
-			make_directory(test + temptemp);
+	for (int i = 0; i < file.tarHeaders.size(); i++) {
+		hdrTitle = file.tarHeaders[i];
+		slash = hdrTitle.back();
+
+		fileOut.open((directoryStart + hdrTitle.c_str()));
+		
+		if (slash == '/') {
+			dirNoSlash = hdrTitle.erase(hdrTitle.size() - 1);
+			make_directory(directoryStart + dirNoSlash);
 		} else {
 			if (fileOut.is_open()) {
 				fileOut << file.tarFileContents[i];
 			} else {
-				cout << "File could not be opened." << endl << endl;
+				cout << "File could not be opened." << endl;
 			}
 		}
-		fileOut.close();
+		fileOut.close(); //not sure where the best place to call this is
 	}
-	cout << "All of the files have been output." << endl;
 }
 
 //Make a directory in both windows and linux --WORKS
 void make_directory(string name) {
-
-
 	string mk;
 	string path;
 
@@ -345,16 +348,3 @@ void make_directory(string name) {
 	system(c);
 	cout << "test" << endl;
 }
-
-//char curPth() {
-//	char cCurrentPath[FILENAME_MAX];
-//
-//	if (!GetCurrentDir(cCurrentPath, sizeof(cCurrentPath)))
-//	{
-//		return errno;
-//	}
-//
-//	cCurrentPath[sizeof(cCurrentPath) - 1] = '\0'; /* not really required */
-//
-//	printf("The current working directory is %s", cCurrentPath);
-//}
