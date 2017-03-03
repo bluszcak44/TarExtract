@@ -8,7 +8,7 @@
 //#include <unistd.h> //-------------------------------NEED FOR LINUX-----------
 #include <stdio.h>
 #include <signal.h>
-#include <sys/types.h> //linux
+#include <sys/types.h>
 
 #ifdef _WIN32
 #include <direct.h>
@@ -115,7 +115,6 @@ void readHdr(tarHdr &myHdr, ifstream &tarF, contentsFile &file) {
 			slash = fileName.back(); //get slash in fileName if present
 			cout << "Filename: " << fileName << endl;
 
-			/*strtol will parse a string and convert the value to an integer. The 8 in the last argument says to assume it is an octal value * stored in the string. */
 			ownersID = strtol(myHdr.uid, NULL, 8);
 			groupID = strtol(myHdr.gid, NULL, 8);
 			cout << "Owner ID = " << ownersID << "\n" << "Group ID = " << groupID << endl;
@@ -286,8 +285,8 @@ void outputFiles(tarHdr &myHdr, contentsFile &file, string usrTarFile) {
 		} else {
 			if (fileOut.is_open()) {
 				fileOut << file.tarFileContents[i];
-				//sleep(50); //-----------------------NEED FOR LINUX----------
-				//kill(getpid(), SIGKILL);---------------NEED FOR LINUX
+				//sleep(3); //-----------------------NEED FOR LINUX----------
+				//kill(pid, SIGKILL);---------------NEED FOR LINUX
 			} else {
 				cout << "File could not be opened." << endl;
 			}
