@@ -1,12 +1,14 @@
 //Written by: Blaine Luszcak
-#include <cstring>
 #include <cstdlib>
 #include <cstring>
+#include <string>
 #include <fstream>
 #include <iostream>
+#include <vector> 
+//#include <unistd.h> //-------------------------------NEED FOR LINUX-----------
 #include <stdio.h>
+#include <signal.h>
 #include <sys/types.h> //linux
-#include "File.h"
 
 #ifdef _WIN32
 #include <direct.h>
@@ -32,26 +34,22 @@ struct tarHdr {
 
 //actual file struct
 struct contentsFile {
-	char test[700];
 	vector<string> contents, tarHeaders, tarFileContents;
 	vector<char> v;
-	vector<int> headerLoc, totalFileSize, currFileSize, trackFileSize, outputFiles,
-				hdrPrev, hdrPos, dataBlocks, tarFileSizes, tarFileLink;
+	vector<int> hdrPrev, hdrPos, dataBlocks, tarFileSizes, tarFileLink;
 };
 
 //Prototyping functions
 void readHdr(tarHdr &myHdr, ifstream &tarF, contentsFile &file);
-void readFile(contentsFile &file, ifstream &tarF);
-//void remainingFilesLoop(tarHdr &myHdr, contentsFile &file, ifstream &tarF);
-void outputFiles(tarHdr &myHdr, contentsFile &file);
-void make_directory(string name);
+void readFile(contentsFile &file, ifstream &tarF, string usrTarFile);
+void outputFiles(tarHdr &myHdr, contentsFile &file, string usrTarFile);
+void make_directory(string usrTarFile);
 
 int main() {
 
 	ifstream infile, nextFile;
 	string fileN, usrTarFile, usrFolderChng;
 	int size, currentPos, fileLength;
-
 	currentPos = 0;
 
 	tarHdr myHdr; //header struct for each file in the .tar
@@ -66,31 +64,13 @@ int main() {
 		cout << ".tar opened" << endl;
 	}
 
-	//cout << "Y or N: Would you like to change the name of the extraction folder?" << endl;
-	//cin >> usrFolderChng;
-	//if (usrFolderChng == "Y") {
-	//	cout << "Please enter the name you would like to give the folder " << endl;
-	//	cin >> usrTarFile;
-	//} else if (usrFolderChng == "N") {
-	//	cout << "Using same name as the .tar file: " << usrTarFile;
-	//} else {
-	//	//
-	//}
+	make_directory(usrTarFile);
 
-	make_directory("srcTest");
+	readHdr(myHdr, infile, file); 
+	readFile(file, infile, usrTarFile);
+	outputFiles(myHdr, file, usrTarFile);
 
-	//get the size of the .tar and then read from the 0th line
-	infile.seekg(0, infile.end);
-	fileLength = infile.tellg();
-	file.totalFileSize.push_back(fileLength); //pushes size of .tar file into vector
-	infile.seekg(0, infile.beg); //start reading at the beginning of the file so line 0
-
-	readHdr(myHdr, infile, file); //get your header struct
-	readFile(file, infile); //take the header info and find the corresponding file in .tar
-//	outputFiles(myHdr, file); //Functin call to save first file into created directory, after this the call will only be used in "remainingFilesLoop"
-//	remainingFilesLoop(myHdr, file, infile); //loop through the remaining files
-
-	infile.close(); //close the filereader after it's done
+	infile.close();
 
 	cout << "We made it to the end of the program. " << "\n" << endl;
 	printf("Press enter to continue...\n");
@@ -108,7 +88,6 @@ void readHdr(tarHdr &myHdr, ifstream &tarF, contentsFile &file) {
 	char * block;
 	char folderC, slash;
 	bool headers, firstHeader;
-	//streampos pos;
 
 	headers = true;
 	firstHeader = true;
@@ -118,8 +97,7 @@ void readHdr(tarHdr &myHdr, ifstream &tarF, contentsFile &file) {
 	hdrPrev = 0;
 
 	file.hdrPrev.push_back(0); //start headerPrevious at 0
-//	file.hdrPos.push_back(0); //starting real header vec @ 0 b/c it's always starting @ 0
-	while (headers == true) { //can't start "" so need bool
+	while (headers == true) { 
 
 		//Loop to read header and find the next one || starts @ 0 but doesn't auto push it
 		tarF.read((char*)&myHdr, sizeof(myHdr));
@@ -130,9 +108,9 @@ void readHdr(tarHdr &myHdr, ifstream &tarF, contentsFile &file) {
 
 		fileName = myHdr.name;
 		hdrLnkflag = myHdr.linkflag;
-		if (fileName != "") { //apparently you can't do two && !='s
+		if (fileName != "") { 
 			hdrPrev = tarF.tellg();
-			file.hdrPrev.push_back(hdrPrev); //keep track of all header positions
+			file.hdrPrev.push_back(hdrPrev);
 			
 			slash = fileName.back(); //get slash in fileName if present
 			cout << "Filename: " << fileName << endl;
@@ -171,13 +149,11 @@ void readHdr(tarHdr &myHdr, ifstream &tarF, contentsFile &file) {
 					firstHeader = false;
 					hdrCnt += 2;
 				} else if (hdrCnt == 1) {
-					//int t = *(file.hdrPos.rbegin());
 					int t = *(file.hdrPrev.rbegin() + 1);
 					file.hdrPos.push_back(t);
 					hdrCnt++;
 				} else {
 					int t = *(file.hdrPrev.rbegin());
-					//int t = *(file.hdrPos.rbegin());
 					file.hdrPos.push_back(t); //folder headers just move 512
 					hdrCnt++;
 				}
@@ -240,7 +216,7 @@ void readHdr(tarHdr &myHdr, ifstream &tarF, contentsFile &file) {
 }
 
 //read the first file based on the header
-void readFile(contentsFile &file, ifstream &tarF) {
+void readFile(contentsFile &file, ifstream &tarF, string usrTarFile) {
 
 	int fileSize, pos;
 	ifstream currFile;
@@ -248,32 +224,30 @@ void readFile(contentsFile &file, ifstream &tarF) {
 	const char *f;
 	char slash;
 
-
 	for (int i = 0; i < file.tarHeaders.size(); i++) {
 		fileName = file.tarHeaders[i];
-		//f = fileN.c_str();
 		slash = fileName.back();
 		fileSize = file.tarFileSizes[i];
 
-		currFile.open("open/" + (string)fileName);
-		if (tarF.fail()) { //curFile or tarF?
+		currFile.open(usrTarFile + "/" + (string)fileName);
+		if (tarF.fail()) {
 			cerr << "Couldn't open input file -- exiting" << endl;
-		}  //need an else or nah?
+		}  
 
 		//if we have folder, do nothing -- if we have file seek and read
 		if (file.tarFileLink[i] == 5 || slash == '/') {
 			cout << "Folder: " << fileName << endl;
+			pos = file.hdrPos[i];
+			tarF.seekg(pos); 
 		} else { 
 			//
 			if (file.hdrPos[i] == 0) {
 				pos = file.hdrPos[i] + (file.dataBlocks[i] * 512);
-				//pos = file.hdrPos[i] + 512; //start reading
 				tarF.seekg(pos);
 				file.v.resize(file.tarFileSizes[i]);
 				tarF.read(&file.v[0], file.tarFileSizes[i]);
 			} else {
-				//pos = file.hdrPos[i] + (file.dataBlocks[i]) * 512;
-				pos = file.hdrPos[i] + 512; //strt read
+				pos = file.hdrPos[i] + 512;
 				tarF.seekg(pos);
 				file.v.resize(file.tarFileSizes[i]);
 				tarF.read(&file.v[0], file.tarFileSizes[i]);
@@ -281,24 +255,26 @@ void readFile(contentsFile &file, ifstream &tarF) {
 		}
 
 		s = string(file.v.begin(), file.v.end()); //read contents of v we just got into a string
-		file.tarFileContents.push_back(s); //push into vector
+		file.tarFileContents.push_back(s);
 		file.v.clear();
 	}
 	currFile.close();
 }
 
-
 //output all of the files that we got from the .tar into the folder that we created
-void outputFiles(tarHdr &myHdr, contentsFile &file) {
+void outputFiles(tarHdr &myHdr, contentsFile &file, string usrTarFile) {
 	ofstream fileOut;
 	int fileCnt;
 	string directoryStart, hdrTitle, dirNoSlash;
 	char slash;
 	fileCnt = 0;
+	//pid_t pid; -----------------------NEED FOR LINUX----------------
 
-	directoryStart = "open/";
+	directoryStart = usrTarFile + "/";
 
 	for (int i = 0; i < file.tarHeaders.size(); i++) {
+		//pid = fork(); -----------------------------NEED FOR LINUX-----------
+		
 		hdrTitle = file.tarHeaders[i];
 		slash = hdrTitle.back();
 
@@ -306,27 +282,29 @@ void outputFiles(tarHdr &myHdr, contentsFile &file) {
 		
 		if (slash == '/') {
 			dirNoSlash = hdrTitle.erase(hdrTitle.size() - 1);
-			make_directory(directoryStart + dirNoSlash);
+			make_directory(directoryStart + dirNoSlash + "/");
 		} else {
 			if (fileOut.is_open()) {
 				fileOut << file.tarFileContents[i];
+				//sleep(50); //-----------------------NEED FOR LINUX----------
+				//kill(getpid(), SIGKILL);---------------NEED FOR LINUX
 			} else {
 				cout << "File could not be opened." << endl;
 			}
 		}
-		fileOut.close(); //not sure where the best place to call this is
+		fileOut.close();
 	}
 }
 
-//Make a directory in both windows and linux --WORKS
-void make_directory(string name) {
+//Make a directory in both windows and linux
+void make_directory(string usrTarFile) {
 	string mk;
 	string path;
 
 	mk = "mkdir ";
-	path = mk.append(name);
+	//mk = "mkdir -p "; // -----------NEED THIS ONE FOR LINUX-----------
+	path = mk.append(usrTarFile);
 	const char *c = path.c_str();
 
-	system(c);
-	cout << "test" << endl;
+	system(c); 
 }
